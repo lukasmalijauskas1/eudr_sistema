@@ -1,6 +1,6 @@
 # EUDR_SISTEMA
 
-EUDR atitikties tikrinimo informacinė sistema, skirta produktų ir tiekėjų duomenų valdymui, EUDR rizikos vertinimui ir DDS (Due Diligence Statement) dokumentų generavimui.
+EUDR atitikties tikrinimo ir atsekamumo informacinė sistema, skirta produktų ir tiekėjų duomenų valdymui, EUDR rizikos vertinimui ir DDS (Due Diligence Statement) dokumentų generavimui.
 
 ## Diegimo instrukcija (XAMPP aplinka)
 

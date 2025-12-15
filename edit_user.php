@@ -3,6 +3,7 @@ require_once 'secure_session.php';
 require_once 'secure_headers.php';
 require 'db.php';
 require 'csrf.php';
+require_once 'password_policy.php';
 
 if (($_SESSION['role'] ?? '') !== 'admin') { header("Location: login.php"); exit(); }
 
@@ -34,19 +35,26 @@ if (!$message && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $newp2  = $_POST['naujas_slaptazodis2'] ?? '';
 
         // Guard: don't allow removing the last admin
-        if ($user['Role'] === 'admin' && $role !== 'admin' && other_admin_count($pdo, $user['ID']) === 0) {
+        if ($user['Role'] === 'admin' && $role !== 'admin' && other_admin_count($pdo, (int)$user['ID']) === 0) {
             $message = "❌ Negalima pašalinti paskutinio administratoriaus.";
-        } elseif ($newp !== '' && ($newp !== $newp2 || strlen($newp) < 8)) {
-            $message = "❌ Naujas slaptažodis netinkamas (≥8 ir sutapti).";
-        } else {
+        } elseif ($newp !== '') {
+            if ($newp !== $newp2) {
+                $message = "❌ Slaptažodžiai nesutampa.";
+            } elseif ($err = password_policy_error($newp)) {
+                $message = $err;
+            }
+        }
+
+        if ($message === "") {
             if ($newp !== '') {
-                $hash = password_hash($newp, PASSWORD_DEFAULT);
+                $hash = password_hash_strong($newp);
                 $stmt = $pdo->prepare("UPDATE vartotojas SET Vardas=?, El_pastas=?, Slaptazodis=?, Role=? WHERE ID=?");
                 $ok = $stmt->execute([$vardas, $el, $hash, $role, $user['ID']]);
             } else {
                 $stmt = $pdo->prepare("UPDATE vartotojas SET Vardas=?, El_pastas=?, Role=? WHERE ID=?");
                 $ok = $stmt->execute([$vardas, $el, $role, $user['ID']]);
             }
+
             $message = $ok ? "✅ Vartotojas atnaujintas sėkmingai." : "❌ Klaida atnaujinant vartotoją.";
             if ($ok) { // reload
                 $stmt = $pdo->prepare("SELECT * FROM vartotojas WHERE ID=?");
@@ -69,12 +77,21 @@ if (!$message && $_SERVER['REQUEST_METHOD'] === 'POST') {
     <h2>Redaguoti vartotoją</h2>
     <?php if ($message): ?><p class="<?= str_starts_with($message,'❌')?'error':'' ?>"><?= $message ?></p><?php endif; ?>
     <?php if (!empty($user)): ?>
-    <form method="post">
+    <form method="post" autocomplete="off">
         <?= csrf_field() ?>
         <input name="vardas" value="<?= htmlspecialchars($user['Vardas']) ?>" required>
         <input name="el_pastas" type="email" value="<?= htmlspecialchars($user['El_pastas']) ?>" required>
-        <input name="naujas_slaptazodis" type="password" placeholder="Naujas slaptažodis (neprivalomas)">
-        <input name="naujas_slaptazodis2" type="password" placeholder="Pakartoti slaptažodį">
+
+        <input name="naujas_slaptazodis" type="password"
+               placeholder="Naujas slaptažodis (≥12, 1 DIDŽ., 1 sk., 1 spec.)"
+               minlength="12"
+               autocomplete="new-password">
+
+        <input name="naujas_slaptazodis2" type="password"
+               placeholder="Pakartoti slaptažodį"
+               minlength="12"
+               autocomplete="new-password">
+
         <select name="role" required>
             <option value="naudotojas"   <?= $user['Role']==='naudotojas'?'selected':'' ?>>Naudotojas</option>
             <option value="inspektorius" <?= $user['Role']==='inspektorius'?'selected':'' ?>>Inspektorius</option>

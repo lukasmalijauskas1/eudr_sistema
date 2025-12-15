@@ -3,6 +3,7 @@ require_once 'secure_session.php';
 require_once 'secure_headers.php';
 require 'db.php';
 require 'csrf.php';
+require_once 'password_policy.php';
 
 if (($_SESSION['role'] ?? '') !== 'admin') { header("Location: login.php"); exit(); }
 
@@ -20,10 +21,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($pass !== $pass2) {
             $message = "❌ Slaptažodžiai nesutampa.";
-        } elseif (strlen($pass) < 8) {
-            $message = "❌ Slaptažodis per trumpas (≥8).";
+        } elseif ($err = password_policy_error($pass)) {
+            $message = $err;
         } else {
-            $hash = password_hash($pass, PASSWORD_DEFAULT);
+            $hash = password_hash_strong($pass);
             try {
                 $stmt = $pdo->prepare("INSERT INTO vartotojas (Vardas, El_pastas, Slaptazodis, Role) VALUES (?, ?, ?, ?)");
                 $stmt->execute([$vardas, $el, $hash, $role]);
@@ -46,12 +47,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <div class="container">
     <h2>Pridėti vartotoją</h2>
     <?php if ($message): ?><p class="<?= str_starts_with($message,'❌')?'error':'' ?>"><?= $message ?></p><?php endif; ?>
-    <form method="post">
+    <form method="post" autocomplete="off">
         <?= csrf_field() ?>
         <input name="vardas" placeholder="Vardas" required>
         <input name="el_pastas" type="email" placeholder="El. paštas" required>
-        <input name="slaptazodis" type="password" placeholder="Slaptažodis (≥8)" required>
-        <input name="slaptazodis2" type="password" placeholder="Pakartoti slaptažodį" required>
+
+        <input name="slaptazodis" type="password"
+               placeholder="Slaptažodis (≥12, 1 DIDŽ., 1 sk., 1 spec.)"
+               minlength="12"
+               autocomplete="new-password"
+               required>
+
+        <input name="slaptazodis2" type="password"
+               placeholder="Pakartoti slaptažodį"
+               minlength="12"
+               autocomplete="new-password"
+               required>
+
         <select name="role" required>
             <option value="naudotojas">Naudotojas</option>
             <option value="inspektorius">Inspektorius</option>

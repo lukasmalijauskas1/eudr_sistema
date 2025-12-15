@@ -3,6 +3,7 @@ require_once 'secure_session.php';
 require_once 'secure_headers.php';
 require 'db.php';
 require 'csrf.php';
+require_once 'password_policy.php';
 
 if (($_SESSION['role'] ?? '') !== 'admin') { header("Location: login.php"); exit(); }
 
@@ -28,10 +29,12 @@ if (!$message && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             if ($slap !== '') {
-                if ($slap !== $slap2 || strlen($slap) < 8) {
-                    $message = "❌ Naujas slaptažodis netinkamas (≥8 ir sutapti).";
+                if ($slap !== $slap2) {
+                    $message = "❌ Slaptažodžiai nesutampa.";
+                } elseif ($err = password_policy_error($slap)) {
+                    $message = $err;
                 } else {
-                    $hash = password_hash($slap, PASSWORD_DEFAULT);
+                    $hash = password_hash_strong($slap);
                     $stmt = $pdo->prepare("UPDATE tiekejas SET Pavadinimas=?, Adresas=?, Kontaktai=?, Slaptazodis=? WHERE ID=?");
                     $ok = $stmt->execute([$pavadinimas, $adresas, $kontaktai, $hash, $id]);
                     $message = $ok ? "✅ Tiekėjas atnaujintas sėkmingai." : "❌ Klaida atnaujinant tiekėją.";
@@ -67,13 +70,22 @@ if (!$message && $_SERVER['REQUEST_METHOD'] === 'POST') {
     <h2>Redaguoti tiekėją</h2>
     <?php if ($message): ?><p class="<?= str_starts_with($message,'❌')?'error':'' ?>"><?= $message ?></p><?php endif; ?>
     <?php if (!empty($supplier)): ?>
-    <form method="post">
+    <form method="post" autocomplete="off">
         <?= csrf_field() ?>
         <input name="pavadinimas" value="<?= htmlspecialchars($supplier['Pavadinimas']) ?>" required>
         <input name="adresas" value="<?= htmlspecialchars($supplier['Adresas']) ?>" required>
         <input name="kontaktai" value="<?= htmlspecialchars($supplier['Kontaktai']) ?>" required>
-        <input name="slaptazodis" type="password" placeholder="Naujas slaptažodis (neprivalomas)">
-        <input name="slaptazodis2" type="password" placeholder="Pakartoti slaptažodį">
+
+        <input name="slaptazodis" type="password"
+               placeholder="Naujas slaptažodis (≥12, 1 DIDŽ., 1 sk., 1 spec.)"
+               minlength="12"
+               autocomplete="new-password">
+
+        <input name="slaptazodis2" type="password"
+               placeholder="Pakartoti slaptažodį"
+               minlength="12"
+               autocomplete="new-password">
+
         <button type="submit">Išsaugoti</button>
     </form>
     <?php endif; ?>

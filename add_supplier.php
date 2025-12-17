@@ -1,9 +1,10 @@
-<?php 
+<?php
 require_once 'secure_session.php';
 require_once 'secure_headers.php';
 require 'db.php';
 require 'csrf.php';
 require_once 'password_policy.php';
+require_once 'twofa_lib.php';
 
 if (($_SESSION['role'] ?? '') !== 'admin') { header("Location: login.php"); exit(); }
 
@@ -26,10 +27,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $hash = password_hash_strong($slap);
 
+            // mandatory 2FA
+            $twofa_enabled   = 1;
+            $twofa_confirmed = 0;
+            $twofa_secret    = twofa_random_base32_secret(20);
+
             try {
-                $stmt = $pdo->prepare("INSERT INTO tiekejas (Pavadinimas, Adresas, Kontaktai, Slaptazodis) VALUES (?, ?, ?, ?)");
-                $stmt->execute([$pavadinimas, $adresas, $kontaktai, $hash]);
-                $message = "✅ Tiekėjas pridėtas sėkmingai.";
+                $stmt = $pdo->prepare("
+                    INSERT INTO tiekejas (Pavadinimas, Adresas, Kontaktai, Slaptazodis, twofa_enabled, twofa_secret, twofa_confirmed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([$pavadinimas, $adresas, $kontaktai, $hash, $twofa_enabled, $twofa_secret, $twofa_confirmed]);
+                $message = "✅ Tiekėjas pridėtas sėkmingai (2FA bus privalomas pirmo prisijungimo metu).";
             } catch (PDOException $e) {
                 $isDup = ($e->getCode() === '23000') ||
                          (isset($e->errorInfo[1]) && (int)$e->errorInfo[1] === 1062);

@@ -4,6 +4,7 @@ require_once 'secure_headers.php';
 require 'db.php';
 require 'csrf.php';
 require_once 'password_policy.php';
+require_once 'twofa_lib.php';
 
 if (($_SESSION['role'] ?? '') !== 'admin') { header("Location: login.php"); exit(); }
 
@@ -25,10 +26,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = $err;
         } else {
             $hash = password_hash_strong($pass);
+
+            // mandatory 2FA
+            $twofa_enabled   = 1;
+            $twofa_confirmed = 0;
+            $twofa_secret    = twofa_random_base32_secret(20);
+
             try {
-                $stmt = $pdo->prepare("INSERT INTO vartotojas (Vardas, El_pastas, Slaptazodis, Role) VALUES (?, ?, ?, ?)");
-                $stmt->execute([$vardas, $el, $hash, $role]);
-                $message = "✅ Vartotojas pridėtas sėkmingai.";
+                $stmt = $pdo->prepare("
+                    INSERT INTO vartotojas (Vardas, El_pastas, Slaptazodis, Role, twofa_enabled, twofa_secret, twofa_confirmed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([$vardas, $el, $hash, $role, $twofa_enabled, $twofa_secret, $twofa_confirmed]);
+                $message = "✅ Vartotojas pridėtas sėkmingai (2FA bus privalomas pirmo prisijungimo metu).";
             } catch (PDOException $e) {
                 $message = "❌ Klaida pridedant vartotoją (gal el. paštas jau naudojamas).";
             }

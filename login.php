@@ -18,8 +18,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email    = trim($_POST['email'] ?? '');
     $password = (string)($_POST['password'] ?? '');
 
+    // clear any previous preauth state
+    unset($_SESSION['twofa_pending']);
+    $_SESSION['twofa_attempts'] = 0;
+    $_SESSION['twofa_lock_until'] = 0;
+
     // --- 1) Try vartotojas by email
-    $stmt = $pdo->prepare("SELECT ID, Role, Vardas, Slaptazodis FROM vartotojas WHERE El_pastas = ? LIMIT 1");
+    $stmt = $pdo->prepare("
+        SELECT ID, Role, Vardas, Slaptazodis, twofa_enabled, twofa_secret, twofa_confirmed
+        FROM vartotojas
+        WHERE El_pastas = ?
+        LIMIT 1
+    ");
     $stmt->execute([$email]);
     $u = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -29,7 +39,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (is_hash_like($stored)) {
             $ok = password_verify($password, $stored);
         } else {
-            // legacy plain text
             $ok = hash_equals($stored, $password);
             if ($ok) {
                 $newHash = password_hash($password, PASSWORD_DEFAULT);
@@ -37,23 +46,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $upd->execute([$newHash, $u['ID']]);
             }
         }
+
         if ($ok) {
+            // 2FA mandatory gate
+            $_SESSION['twofa_pending'] = [
+                'type' => 'vartotojas',
+                'id'   => (int)$u['ID']
+            ];
+
+            if ((int)($u['twofa_enabled'] ?? 1) === 1) {
+                if ((int)($u['twofa_confirmed'] ?? 0) === 1) {
+                    header("Location: twofa_verify.php"); exit();
+                }
+                header("Location: twofa_setup.php"); exit();
+            }
+
+            // (if someday you disable 2FA in DB, fallback to old login)
             session_regenerate_id(true);
             $_SESSION['user_id']  = (int)$u['ID'];
             $_SESSION['role']     = $u['Role'];
             $_SESSION['username'] = $u['Vardas'];
 
-            if ($u['Role'] === 'admin')          { header("Location: admindashboard.php"); exit(); }
-            if ($u['Role'] === 'inspektorius')   { header("Location: inspectordashboard.php"); exit(); }
-            if ($u['Role'] === 'naudotojas')     { header("Location: userdashboard.php"); exit(); }
-            if ($u['Role'] === 'tiekejas')       { header("Location: supplierdashboard.php"); exit(); } // if you ever store suppliers in vartotojas
-            $_SESSION['login_error'] = "Nežinomas vaidmuo.";
-            header("Location: login.php"); exit();
+            if ($u['Role'] === 'admin')        { header("Location: admindashboard.php"); exit(); }
+            if ($u['Role'] === 'inspektorius') { header("Location: inspectordashboard.php"); exit(); }
+            header("Location: userdashboard.php"); exit();
         }
     }
 
-    // --- 2) Try supplier by Kontaktai (you use the same email field for input)
-    $stmt = $pdo->prepare("SELECT ID, Pavadinimas, Slaptazodis FROM tiekejas WHERE Kontaktai = ? LIMIT 1");
+    // --- 2) Try supplier by Kontaktai (same login input)
+    $stmt = $pdo->prepare("
+        SELECT ID, Pavadinimas, Slaptazodis, twofa_enabled, twofa_secret, twofa_confirmed
+        FROM tiekejas
+        WHERE Kontaktai = ?
+        LIMIT 1
+    ");
     $stmt->execute([$email]);
     $s = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -69,11 +95,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $upd->execute([$newHash, $s['ID']]);
             }
         }
+
         if ($ok) {
+            $_SESSION['twofa_pending'] = [
+                'type' => 'tiekejas',
+                'id'   => (int)$s['ID']
+            ];
+
+            if ((int)($s['twofa_enabled'] ?? 1) === 1) {
+                if ((int)($s['twofa_confirmed'] ?? 0) === 1) {
+                    header("Location: twofa_verify.php"); exit();
+                }
+                header("Location: twofa_setup.php"); exit();
+            }
+
+            // fallback (if 2FA disabled someday)
             session_regenerate_id(true);
-            $_SESSION['tiekejas_id']  = (int)$s['ID'];
-            $_SESSION['role']         = 'tiekejas';
-            $_SESSION['supplier_name']= $s['Pavadinimas'];
+            $_SESSION['tiekejas_id']   = (int)$s['ID'];
+            $_SESSION['role']          = 'tiekejas';
+            $_SESSION['supplier_name'] = $s['Pavadinimas'];
             header("Location: supplierdashboard.php"); exit();
         }
     }
